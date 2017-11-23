@@ -1,7 +1,14 @@
 package com.ricky.model;
 
-import com.org.json.JSONObject;
+
+import com.org.json.JSONArray;
 import com.org.json.JSONException;
+import com.org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Created by Ricky on 2017/11/5.
@@ -13,23 +20,27 @@ public class Message {
     private String player;        //用户名字
     private Position prePos;      //第一次选择位置
     private Position nextPos;    //第二次选择位置
+    private List<Integer> deck;    //用于游戏开始的时候传送卡组信息
 
     private static final String MSG_TYPE = "message_type";
     private static final String PLAYER = "player";
     private static final String PRE_ROW = "pre_row";
     private static final String PRE_COLUMN = "pre_column";
     private static final String PRE_IMG_TYPE = "pre_img_type";
-    private static final String PRE_CARD_ID = "pre_card_id";
+    private static final String PRE_CARD_POS = "pre_card_pos";
     private static final String NEXT_ROW = "next_row";
     private static final String NEXT_COLUMN = "next_column";
     private static final String NEXT_IMG_TYPE = "next_img_type";
-    private static final String NEXT_CARD_ID = "next_card_id";
+    private static final String NEXT_CARD_POS = "next_card_pos";
+    private static final String DECK = "deck";
+    private static final String EACH_CARD = "each_card";
 
     public Message(Type type, String player) {
         this.type = type;
         this.player = player;
         prePos = null;
         nextPos = null;
+        deck = null;
     }
 
     public Message(Type type,String player, Position prePos, Position nextPos) {
@@ -37,6 +48,16 @@ public class Message {
         this.player = player;
         this.prePos = prePos;
         this.nextPos = nextPos;
+        this.deck = null;
+    }
+
+    public Message(Type type, String player, List<Integer> deck) {
+        this.type = type;
+        this.player = player;
+        this.deck = deck;
+
+        prePos = null;
+        nextPos = null;
     }
 
     /**
@@ -48,21 +69,29 @@ public class Message {
         try {
             JSONObject jsonObject = new JSONObject(json);
 
-            this.type = (Type) jsonObject.get(MSG_TYPE);
+            this.type = Type.valueOf(jsonObject.getString(MSG_TYPE));
             this.player = jsonObject.getString(PLAYER);
             if (type == Type.PLAY) {
                 this.prePos = new Position(
                         jsonObject.getInt(PRE_ROW),
                         jsonObject.getInt(PRE_COLUMN),
-                        jsonObject.getInt(PRE_CARD_ID),
-                        (Position.Type) jsonObject.get(PRE_IMG_TYPE)
+                        jsonObject.getInt(PRE_CARD_POS),
+                        Position.Type.valueOf(jsonObject.getString(PRE_IMG_TYPE))
                 );
                 this.nextPos = new Position(
                         jsonObject.getInt(NEXT_ROW),
                         jsonObject.getInt(NEXT_COLUMN),
-                        jsonObject.getInt(NEXT_CARD_ID),
-                        (Position.Type) jsonObject.get(NEXT_IMG_TYPE)
+                        jsonObject.getInt(NEXT_CARD_POS),
+                        Position.Type.valueOf(jsonObject.getString(NEXT_IMG_TYPE))
                 );
+            } else if (type == Type.START || type == Type.FIRST || type == Type.SECOND) {
+                JSONArray deckArray = jsonObject.getJSONArray(DECK);
+                deck = new ArrayList<>();
+                for (int i = 0; i < deckArray.length(); i++) {
+                    JSONObject eachObject = deckArray.getJSONObject(i);
+                    deck.add(eachObject.getInt(EACH_CARD));
+                }
+                Collections.sort(deck);
             }
         } catch (JSONException e) {
             e.printStackTrace();
@@ -82,13 +111,24 @@ public class Message {
             if (type == Type.PLAY) {
                 jsonObject.put(PRE_ROW, prePos.getRow());
                 jsonObject.put(PRE_COLUMN, prePos.getColumn());
-                jsonObject.put(PRE_CARD_ID, prePos.getCardID());
+                jsonObject.put(PRE_CARD_POS, prePos.getCardPosition());
                 jsonObject.put(PRE_IMG_TYPE, prePos.getType());
 
                 jsonObject.put(NEXT_ROW, nextPos.getRow());
                 jsonObject.put(NEXT_COLUMN, nextPos.getColumn());
-                jsonObject.put(NEXT_CARD_ID, nextPos.getCardID());
+                jsonObject.put(NEXT_CARD_POS, nextPos.getCardPosition());
                 jsonObject.put(NEXT_IMG_TYPE, nextPos.getType());
+            }
+            else if (type == Type.START || type == Type.FIRST || type == Type.SECOND) {
+                JSONArray deckArray = new JSONArray();
+
+                for(Integer each_card : deck) {
+                    JSONObject each_object = new JSONObject();
+                    each_object.put(EACH_CARD, each_card);
+                    deckArray.put(each_object);
+                }
+
+                jsonObject.put(DECK, deckArray);
             }
         } catch (JSONException e) {
             e.printStackTrace();
@@ -128,7 +168,13 @@ public class Message {
         this.nextPos = nextPos;
     }
 
-    public enum Type {
-        START, END, GAME, TURN, WAIT, PLAY
+    public List<Integer> getDeck() {
+        return deck;
     }
+
+    public enum Type {
+        START, END, FIRST, TURN, SECOND, PLAY, WAIT
+    }
+
+
 }

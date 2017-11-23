@@ -18,13 +18,13 @@ public class WsSocketServer {
     private static Session waitSession = null;
     private static boolean flag = false;
     private static Map<String, Session> sendMap = new HashMap<>();
+    private static List<Integer> waitDeck = null;
 
     private String player;
+    private String match;
+    private List<Integer> deck;
+    private List<Integer> battleDeck;
     private Session playSession;
-    private int order;
-
-    private static final int FIRST_ORDER = 0;
-    private static final int SECOND_ORDER = 1;
 
     @OnOpen
     public void onOpen(Session session) {
@@ -33,59 +33,95 @@ public class WsSocketServer {
 
     @OnClose
     public void onClose(Session session) {
+
         System.out.println("Close connection..");
+
     }
 
     @OnMessage
     public String onMessage(Session session, String message) {
 
+        System.out.println("Game Socket Server: receive message: " + message);
+
         Message playMsg = new Message(message);
         this.playSession = session;
+        player = playMsg.getPlayer();
+        String str = null;
+
+
         if (playMsg.getType() == Message.Type.START) {
-            player = playMsg.getPlayer();
-
-            while (!flag) {
-                if (waitPlayer.equals("")) {
-                    synchronized (waitPlayer) {
-                        waitPlayer = player;
-                        waitSession = session;
-                        order = FIRST_ORDER;
-                    }
-                } else if (!waitPlayer.equals(player)){
-                    synchronized (waitPlayer) {
-                        sendMap.put(waitPlayer, session);
-                        sendMap.put(player, waitSession);
-                        order = SECOND_ORDER;
-                        waitSession = null;
-                        waitPlayer = "";
-                    }
-                    flag = true;
+            deck = playMsg.getDeck();
+            if (waitPlayer.equals("")) {
+                synchronized (waitPlayer) {
+                    waitPlayer = player;
+                    waitSession = session;
+                    waitDeck = this.deck;
                 }
-            }
 
-            if (order == FIRST_ORDER) {
-                Message retMessage = new Message(Message.Type.GAME, player);
-                return retMessage.toJSON();
-            } else if (order == SECOND_ORDER) {
-                Message retMessage = new Message(Message.Type.WAIT, player);
-                return retMessage.toJSON();
+                Message ret = new Message(Message.Type.WAIT, player);
+                str = ret.toJSON();
+            } else if (!waitPlayer.equals(player)) {
+                synchronized (waitPlayer) {
+                    sendMap.put(waitPlayer, session);
+                    sendMap.put(player, waitSession);
+                    match = waitPlayer;
+                    battleDeck = waitDeck;
+                    waitSession = null;
+                    waitPlayer = "";
+                    waitDeck = null;
+                }
+
+                Message firstMessage = new Message(Message.Type.FIRST, player, deck);
+                Session battleSession = sendMap.get(player);
+                sendMessage(battleSession, firstMessage.toJSON());
+
+                Message second = new Message(Message.Type.SECOND, match, battleDeck);
+                str = second.toJSON();
             }
-            //已经在进行游戏
-        } else {
+            //表示战斗结束
+        } else if (playMsg.getType() == Message.Type.END) {
+
             Session battleSession = sendMap.get(player);
-            try {
-                battleSession.getBasicRemote().sendText(message);
-            } catch (IOException e) {
-                e.printStackTrace();
+            if (battleSession != null) {
+                sendMessage(battleSession, message);
             }
-            return null;
+            sendMap.remove(player);
+        }
+        //表示已经开始战斗
+        else {
+
+            Session battleSession = sendMap.get(player);
+
+            sendMessage(battleSession, message);
+
+            Message ret = new Message(Message.Type.WAIT, player);
+            str = ret.toJSON();
         }
 
-        return null;
+        return str;
     }
 
     @OnError
     public void onError(Throwable e) {
         e.printStackTrace();
+    }
+
+    /**
+     * 相对战者发送信息
+     * @param session 对站者Session
+     * @param message 信息
+     */
+    private void sendMessage(Session session, String message) {
+        try {
+            session.getBasicRemote().sendText(message);
+        } catch (IOException e) {
+            e.printStackTrace();
+
+            for (String key : sendMap.keySet()) {
+                if (sendMap.get(key) == session) {
+                    sendMap.remove(key);
+                }
+            }
+        }
     }
 }
